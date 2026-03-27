@@ -74,20 +74,15 @@ def main():
         """
         for attempt in range(max_retries):
             try:
-                if attempt == 0:
-                    time.sleep(base_delay)
-                else:
-                    wait_time = (base_delay * (2 ** attempt)) + random.uniform(0, 1)
-                    print(f'Rate limit detected, Attempt {attempt + 1}/{max_retries} on {wait_time:.1f}s...')
-                    time.sleep(wait_time)
-
-                # Chamada única para multiplos comentários
+                # Chamada única da API para multiplos comentários
                 batch_results = analyser.analyse_sentiment(texts_to_analyse)
+                # Caso retorne sucesso, sai do loop de retries
+                break
 
             except Exception as e:
                 error_text = str(e).lower()
                 is_rate_limit = any(token in error_text for token in [
-                    "429", "rate", "quota", "resource_exhautested", "ttoo many requests"
+                    "429", "rate", "quota", "resource_exhausted", "too many requests"
                 ])
 
                 # Se não for rate limit, não faz retry infinito
@@ -95,9 +90,13 @@ def main():
                     print(f"Error not related to rate limit: {e}")
                     break
 
-                # Última tentativa falhou
-                if attempt == max_retries - 1:
-                    print(f"Fails after: {max_retries} tryes on batch: {e}")
+                # se chegou aqui, rsultou em rate limit.
+                if attempt < max_retries - 1:
+                        wait_time = (base_delay * (2 ** attempt)) + random.uniform(0, 1)
+                        print(f'Rate limit detected, Attempt {attempt + 1}/{max_retries} in {wait_time:.1f}s...')
+                        time.sleep(wait_time)
+                else:
+                    print(f"Fails after: {max_retries} attempts on batch: {e}")
 
         # Se não conseguiu resultado válido, pula esse batch
         if not batch_results:

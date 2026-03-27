@@ -41,4 +41,4 @@ class OpiAnalyser:
             return json.loads(response.text)
         except Exception as e:
             print(f'Error to process the list: {e}')
-            return f"Error analyzing sentiment with Gemini API: {e and len(comments_list)}"
+            raise RuntimeError(f"Error analyzing sentiment with Gemini API: {e}") from e
