@@ -1,5 +1,6 @@
 import os
-import json
+import random
+import time
 import pandas as pd
 from API.ia_analyser import OpiAnalyser
 from API.youtube_extractor import YoutubeExtractor
@@ -52,7 +53,7 @@ def main():
 
     # DataFrame para os comentários também
     df_comments = pd.DataFrame(comments)
-    batch_size = 20
+    batch_size = 10
     results = []
 
     # 5. Análise de Sentimento e Persistência
@@ -60,10 +61,48 @@ def main():
 
     # Divide os comentários em blocos
     for batch in chunck_list(comments, batch_size):
-        texts_to_analyse = [c['text'] for c in batch]
-        # Chamada única para multiplos comentários
-        batch_results = analyser.analyse_sentiment(texts_to_analyse)
+        texts_to_analyse = [str(c) for c in batch]
 
+        max_retries = 5 # Máximo de tentativas
+        base_delay = 2 # Tempo em segundos
+        batch_results = None
+
+        """
+        O laço a seguir estabele um Timeout para caso haja erros de Rate Limit.
+        Muitos Lotes com comentários grandes serão enviados para a IA analisar, por isso, 
+        um tempo entre cada lote é importante para a API respirar.
+        """
+        for attempt in range(max_retries):
+            try:
+                if attempt == 0:
+                    time.sleep(base_delay)
+                else:
+                    wait_time = (base_delay * (2 ** attempt)) + random.uniform(0, 1)
+                    print(f'Rate limit detected, Attempt {attempt + 1}/{max_retries} on {wait_time:.1f}s...')
+                    time.sleep(wait_time)
+
+                # Chamada única para multiplos comentários
+                batch_results = analyser.analyse_sentiment(texts_to_analyse)
+
+            except Exception as e:
+                error_text = str(e).lower()
+                is_rate_limit = any(token in error_text for token in [
+                    "429", "rate", "quota", "resource_exhautested", "ttoo many requests"
+                ])
+
+                # Se não for rate limit, não faz retry infinito
+                if not is_rate_limit:
+                    print(f"Error not related to rate limit: {e}")
+                    break
+
+                # Última tentativa falhou
+                if attempt == max_retries - 1:
+                    print(f"Fails after: {max_retries} tryes on batch: {e}")
+
+        # Se não conseguiu resultado válido, pula esse batch
+        if not batch_results:
+            print(f"Skipping batch com {len(batch)} comentários por falha na análise.")
+            continue
         # Evita desalinhamento entre comentários e respostas da IA
         if len(batch_results) != len(batch):
             print(f"Warning: batch with {len(batch)} comments returned {len(batch_results)} analyses. Skipping this batch.")
@@ -71,17 +110,21 @@ def main():
 
         # Itera sobre o lote original e o resultado da IA simultâneamente
         for comment_data, analysis in zip(batch, batch_results):
-            # Salva no DB
-            db.save_analysis(
-                selected_video_id,
-                selected_channel,
-                videos_found[0]["title"],
-                comment_data,
-                analysis
-            )
-            results.append(analysis)
+            try:
+                # Salva no DB
+                db.save_analysis(
+                    selected_video_id,
+                    selected_channel,
+                    videos_found[0]["title"],
+                    comment_data,
+                    analysis
+                )
+                results.append(analysis)
+            except Exception as e:
+                print(f"Error on saving analysis on DB: {e}")
+                continue
 
-    print(f"Processados {len(results)} de {len(comments)}...")
+    print(f"Processed {len(results)} from {len(comments)}...")
 
     # 6. Exibir resumo final com pandas
     df_results = pd.DataFrame(results)

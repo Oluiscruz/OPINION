@@ -3,7 +3,7 @@ import json
 from google import genai
 
 class OpiAnalyser:
-    def __init__(self, api_key, base_url=None):
+    def __init__(self, api_key):
 
         if not api_key:
             raise ValueError(
@@ -41,4 +41,4 @@ class OpiAnalyser:
             return json.loads(response.text)
         except Exception as e:
             print(f'Error to process the list: {e}')
-            raise RuntimeError(f"Error analyzing sentiment with Gemini API: {e}") from e and len(comments_list)
+            return f"Error analyzing sentiment with Gemini API: {e and len(comments_list)}"
